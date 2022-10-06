@@ -1,0 +1,35 @@
+with  person as (select district::varchar as district 
+, candidate 
+, lower(van_account_email) as van_account_email
+, van_user_id_if_known::varchar as van_user_id_if_known
+from bjones.pah_optg)
+
+,candidates as (select user_id, district, candidate, 'PA'::varchar as state_code
+from person
+join phoenix_demsdlcc_vansync.users on coalesce(van_user_id_if_known,van_account_email) = lower(email)
+or coalesce(van_user_id_if_known,van_account_email) = user_id
+where committee_state_code = 'PA'
+
+union all 
+/* Adding in the Public Users Table */
+(select public_user_id, district::varchar, candidate, 'PA'::varchar as state_code
+from phoenix_demsdlcc_vansync.public_users
+join phoenix_demsdlcc_vansync.contacts_emails_myc using(state_code,myc_van_id)
+join bjones.pah_optg on lower(email) = lower(coalesce(ActionID_Email_If_Different,van_account_email))
+where state_code = 'PA')
+)
+
+select  candidate, district,  monday_week_start as start_of_week
+
+, sum(case when contact_type_name = 'Walk' then 1 else 0 end) as dvc_walk_attempt
+, sum(case when contact_type_name = 'Call' then 1 else 0 end) as dvc_call_attempt
+
+, sum(case when contact_type_name = 'Walk' and result_name = 'Canvassed' then 1 else 0 end) as dvc_walk_contact
+, sum(case when contact_type_name = 'Call' and result_name = 'Canvassed' then 1 else 0 end) as dvc_call_contact
+
+
+from candidates a
+join phoenix_demsdlcc_vansync_derived.contacts_myv b on canvassed_by_user_id = user_id and a.state_code = b.state_code
+join reporting22.reporting_weeks on reporting_date::date = date_canvassed::date 
+group by district, candidate, monday_week_start
+order by district, candidate, monday_week_start
